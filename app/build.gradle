@@ -1,6 +1,5 @@
 apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
-apply plugin: 'kotlin-parcelize'
 apply plugin: 'com.alibaba.arouter'
 
 //放在所有的插件最后一行
@@ -66,7 +65,8 @@ android {
             openLog = true
             //剔除模块不打成 aar
             excludeModule = [":xxx"]
-            dexMergeIncremental = true
+            // Multi-transform projects should validate correctness before enabling this.
+            dexMergeIncremental = false
         }
     }
 
@@ -88,6 +88,4 @@ dependencies {
     implementation project(':projectC')
     implementation project(':libAnnotations')
 }
-
-
 

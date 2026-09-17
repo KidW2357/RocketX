@@ -107,6 +107,8 @@ open class AppProjectDependencies(
 
         //生成拥有整个依赖图的工具类（只能在此处才能生成）
         mDependenciesHelper = DependenciesHelper(rocketXBean, mAllChildProjectDependenciesList)
+        mDependenciesHelper.markProjectsWithMissingArtifacts(mAllChangedProject)
+        mDependenciesHelper.propagateChangedProjects(mAllChangedProject)
 
         mAllChildProjectDependenciesList.forEach {
             it.doDependencies(mDependenciesHelper)

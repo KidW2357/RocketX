@@ -2,8 +2,10 @@ package plugin.utils
 
 import getMavenArtifactId
 import getMavenGroupId
+import org.gradle.api.GradleException
 import org.gradle.api.Project
 import org.gradle.api.artifacts.Configuration
+import org.gradle.api.artifacts.ProjectDependency
 import org.gradle.api.internal.artifacts.dependencies.DefaultProjectDependency
 import org.gradle.api.internal.artifacts.dependencies.DefaultSelfResolvingDependency
 import org.gradle.api.internal.artifacts.publish.DefaultPublishArtifact
@@ -27,6 +29,65 @@ class DependenciesHelper(
         rocketXBean?.localMaven ?: false
     }
 
+    /**
+     * A timestamp snapshot can survive while an individual cached artifact is removed.
+     * Fall back to source for that project and all of its consumers instead of silently
+     * removing the project dependency without adding an AAR/JAR replacement.
+     */
+    fun markProjectsWithMissingArtifacts(changedProjects: MutableMap<String, Project>?) {
+        if (changedProjects == null) return
+
+        mProjectDependenciesList.forEach { wrapper ->
+            val project = wrapper.project
+            if (changedProjects.containsKey(project.path)) return@forEach
+
+            val extension = when {
+                hasAndroidPlugin(project) -> ".aar"
+                hasJavaPlugin(project) -> ".jar"
+                else -> null
+            } ?: return@forEach
+
+            val cacheFile = File(
+                FileUtil.getLocalMavenCacheDir(),
+                getFlatAarName(project) + extension
+            )
+            if (!cacheFile.isFile) {
+                changedProjects[project.path] = project
+                LogUtil.d("cache missing, compile from source: ${project.path}")
+            }
+        }
+    }
+
+    /**
+     * If a project changes, every local project that compiles against it must also be
+     * rebuilt. Reusing a parent AAR after a child API/resource change can otherwise
+     * produce a successful build with stale bytecode or resources.
+     */
+    fun propagateChangedProjects(changedProjects: MutableMap<String, Project>?) {
+        if (changedProjects == null) return
+
+        var foundNewConsumer: Boolean
+        do {
+            foundNewConsumer = false
+            mProjectDependenciesList.forEach { wrapper ->
+                val consumer = wrapper.project
+                if (changedProjects.containsKey(consumer.path)) return@forEach
+
+                val dependsOnChangedProject = consumer.configurations.any { configuration ->
+                    configuration.dependencies.any { dependency ->
+                        dependency is ProjectDependency &&
+                            changedProjects.containsKey(dependency.dependencyProject.path)
+                    }
+                }
+                if (dependsOnChangedProject) {
+                    changedProjects[consumer.path] = consumer
+                    foundNewConsumer = true
+                    LogUtil.d("dependency changed, compile from source: ${consumer.path}")
+                }
+            }
+        } while (foundNewConsumer)
+    }
+
     //获取第一层 parent 依赖当前 project
     private fun getFirstLevelParentDependencies(project: Project): MutableMap<Project, MutableList<Configuration>> {
         val parentProjectList = mutableMapOf<Project, MutableList<Configuration>>()
@@ -38,7 +99,7 @@ class DependenciesHelper(
                 run loop@{
                     config.dependencies.forEach { dependency ->
                         //项目依赖
-                        if (dependency is DefaultProjectDependency && dependency.name.equals(project.name)) {
+                        if (dependency is ProjectDependency && dependency.dependencyProject.path == project.path) {
                             parentProjectList.get(parentProject)?.apply {
                                 this.add(config)
                             } ?: let {
@@ -78,7 +139,8 @@ class DependenciesHelper(
             parentProject.value.forEach { parentConfig ->
                 // 剔除原有的依赖
                 parentConfig.dependencies.removeAll { dependency ->
-                    dependency is DefaultProjectDependency && dependency.name.equals(projectWapper.project.name)
+                    dependency is ProjectDependency &&
+                        dependency.dependencyProject.path == projectWapper.project.path
                 }
 
                 // 需要根据RocketXBean配置，区分使用本地aar还是maven的依赖方式
@@ -137,7 +199,10 @@ class DependenciesHelper(
 
     private fun addAarDependencyToProject(aarName: String, configName: String, project: Project) {
         //添加 aar 依赖 以下代码等同于 api/implementation/xxx (name: 'libaccount-2.0.0', ext: 'aar'),源码使用 linkedMap
-        if (!File(FileUtil.getLocalMavenCacheDir() + aarName + ".aar").exists()) return
+        val artifact = File(FileUtil.getLocalMavenCacheDir(), aarName + ".aar")
+        if (!artifact.isFile) {
+            throw GradleException("RocketX cache is missing: ${artifact.absolutePath}")
+        }
         val map = linkedMapOf<String, String>()
         map.put("name", aarName)
         map.put("ext", "aar")
@@ -146,7 +211,10 @@ class DependenciesHelper(
 
     private fun addJarDependencyToProject(aarName: String, configName: String, project: Project) {
         //添加 jar 依赖
-        if (!File(FileUtil.getLocalMavenCacheDir() + aarName + ".jar").exists()) return
+        val artifact = File(FileUtil.getLocalMavenCacheDir(), aarName + ".jar")
+        if (!artifact.isFile) {
+            throw GradleException("RocketX cache is missing: ${artifact.absolutePath}")
+        }
         val map = linkedMapOf<String, String>()
         map.put("name", aarName)
         map.put("ext", "jar")

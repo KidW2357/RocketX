@@ -90,6 +90,13 @@ class RocketXBuildListener(
      * 构建完成回调
      */
     override fun buildFinished(result: BuildResult) {
+        if (result.failure == null) {
+            // Finalizer tasks have completed, so the artifact cache and its snapshot
+            // now describe the same successful build.
+            ChangeModuleUtils.flushJsonFile()
+        } else {
+            LogUtil.d("build failed; module snapshot was not updated")
+        }
         stringBuilder.append("构建结束时间：" + dateFormat.format(Calendar.getInstance().time) + "\n")
         val totalTime = (System.currentTimeMillis() - buildStartTime)
         stringBuilder.append("构建总耗时：" + totalTime + "ms")
@@ -118,9 +125,6 @@ class RocketXBuildListener(
      * state. Never null.
      */
     override fun afterExecute(task: Task, state: TaskState) {
-        if (task.name.startsWith(RocketXPlugin.ASSEMBLE) && state.failure == null) {
-            LogUtil.d("task==>${task.name}, state=${state.failure}")
-            ChangeModuleUtils.flushJsonFile()
-        }
+        // Build timing is retained here; cache snapshots are committed in buildFinished.
     }
 }

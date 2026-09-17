@@ -11,8 +11,8 @@ buildscript {
         maven { url "https://plugins.gradle.org/m2/" }
     }
     dependencies {
-        classpath 'com.android.tools.build:gradle:7.2.2'
-        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:1.5.20'
+        classpath 'com.android.tools.build:gradle:4.1.3'
+        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:1.3.72'
         classpath 'com.alibaba:arouter-register:1.0.2'
 //
 //        def pluginDir = getProjectDir().getAbsolutePath() + File.separator + "libs"
@@ -40,4 +40,3 @@ allprojects {
     }
 
 }
-

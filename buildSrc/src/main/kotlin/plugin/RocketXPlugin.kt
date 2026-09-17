@@ -42,7 +42,6 @@ open class RocketXPlugin : Plugin<Project> {
     override fun apply(project: Project) {
         //应用在 主 project 上，也就是 app module
         this.mRocketXBean = project.extensions.create("RocketX", RocketXBean::class.java)
-        speedSync(project)
 
         if (!isEnable(project) || hasAndroidPlugin(project) || !isCurProjectRun(project)) {
             return
@@ -53,6 +52,8 @@ open class RocketXPlugin : Plugin<Project> {
         if (mFlavorBuildType.toLowerCase(Locale.ROOT).contains("release")) {
             return
         }
+        validateBuildEnvironment(project)
+        speedSync(project)
         this.mAppExtension = project.extensions.getByType(AppExtension::class.java)
 
         FileUtil.attach(project)
@@ -71,23 +72,30 @@ open class RocketXPlugin : Plugin<Project> {
             }
             if (mRocketXBean?.localMaven == true) {
                 mProject.rootProject.allprojects.forEach {
-                    if (it.name.equals("app") || it == mProject.rootProject || it.childProjects.isNotEmpty()) {
+                    if (hasAppPlugin(it) || it == mProject.rootProject || it.childProjects.isNotEmpty()) {
                         return@forEach
                     }
                     // 配置maven publish
                     it.mavenPublish(mRocketXBean)
                 }
             }
-//            mProject.gradle.projectsEvaluated {
-//                doAfterEvaluated()
-//            }
+
+            // Only explicitly configured transforms may be disabled on dev_zy.
+            speedBuildByOption(mProject, mAppExtension)
+            if (mRocketXBean?.tuneGradleOptions == true) {
+                boostGradleOption(mProject)
+            }
+
+            // Read extension values after the application module has been evaluated.
+            mProject.gradle.addBuildListener(
+                RocketXBuildListener(
+                    this,
+                    mProject,
+                    mAllChangedProject,
+                    mRocketXBean?.dexMergeIncremental ?: true
+                )
+            )
         }
-
-        mProject.gradle.addBuildListener(RocketXBuildListener(this,  mProject, mAllChangedProject,mRocketXBean?.dexMergeIncremental?:true))
-
-        //开启一些加速的编译项
-        speedBuildByOption(mProject, mAppExtension)
-
 
         mAppProjectDependencies = AppProjectDependencies(project, mAppExtension, mRocketXBean, mAllChangedProject) {
             LogUtil.pritlnDependencyGraph(mAppProjectDependencies)

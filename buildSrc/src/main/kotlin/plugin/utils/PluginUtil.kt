@@ -3,6 +3,7 @@ package plugin.utils
 import com.android.build.api.transform.Transform
 import com.android.build.gradle.AppExtension
 import com.android.build.gradle.BaseExtension
+import org.gradle.api.GradleException
 import org.gradle.api.Project
 import org.gradle.plugins.ide.idea.IdeaPlugin
 import org.gradle.plugins.ide.idea.model.IdeaModule
@@ -36,24 +37,57 @@ fun hasJavaPlugin(curProject: Project): Boolean {
 
 
 fun isRunAssembleTask(curProject: Project): Boolean {
-    return curProject.projectDir.absolutePath.equals(curProject.gradle.startParameter.currentDir.absolutePath)
+    return requestedTaskNames(curProject).any { isAssembleTaskForProject(it, curProject) } &&
+        curProject.projectDir.absolutePath == curProject.gradle.startParameter.currentDir.absolutePath
 }
 
 
 fun isEnable(curProject: Project): Boolean {
+    val propertyValue = curProject.findProperty("rocketx.enabled")?.toString()
+    if (propertyValue != null) {
+        return propertyValue.toBoolean()
+    }
     val enableFile = File(curProject.rootProject.rootDir.absolutePath + File.separator + ".gradle" + File.separator + "rocketXEnable")
     return enableFile.exists()
 }
 
+fun validateBuildEnvironment(appProject: Project) {
+    val configurationCacheEnabled =
+        appProject.findProperty("org.gradle.configuration-cache")?.toString()?.toBoolean() == true
+    if (configurationCacheEnabled) {
+        throw GradleException(
+            "RocketX dev_zy is not compatible with Gradle configuration cache. " +
+                "Disable org.gradle.configuration-cache while RocketX is enabled."
+        )
+    }
+    if (appProject.gradle.startParameter.isConfigureOnDemand) {
+        throw GradleException(
+            "RocketX dev_zy requires configuration on demand to be disabled. " +
+                "Disable org.gradle.configureondemand while RocketX is enabled."
+        )
+    }
+}
+
+private fun requestedTaskNames(project: Project): List<String> {
+    val taskNames = project.gradle.startParameter.taskNames
+    if (taskNames.isNotEmpty()) return taskNames
+    return project.gradle.startParameter.taskRequests.flatMap { it.args }
+}
+
+private fun isAssembleTaskForProject(taskName: String, appProject: Project): Boolean {
+    val simpleTaskName = taskName.substringAfterLast(':')
+    if (!simpleTaskName.startsWith(RocketXPlugin.ASSEMBLE, ignoreCase = true)) return false
+    if (!taskName.contains(':')) return true
+    return taskName.substringBeforeLast(':') == appProject.path
+}
+
 //通过 startParameter 获取  FlavorBuildType
 fun getFlavorBuildType(appProject: Project): String {
-    var flavorBuildType = ""
-    val arg = appProject.gradle.startParameter.taskRequests.getOrNull(0)?.args?.getOrNull(0)
-    if (!arg.isNullOrEmpty()) {
-        var index = arg.indexOf(RocketXPlugin.ASSEMBLE)
-        index = if (index > -1) index + RocketXPlugin.ASSEMBLE.length else 0
-        flavorBuildType = arg.substring(index, arg.length)
-    }
+    val taskName = requestedTaskNames(appProject)
+        .firstOrNull { isAssembleTaskForProject(it, appProject) }
+        ?.substringAfterLast(':')
+        .orEmpty()
+    var flavorBuildType = taskName.substring(RocketXPlugin.ASSEMBLE.length)
     if (flavorBuildType.isNotEmpty()) {
         flavorBuildType = flavorBuildType.substring(0, 1).toLowerCase(Locale.ROOT) + flavorBuildType.substring(1)
     }
@@ -66,25 +100,7 @@ fun getFlatAarName(project: Project): String {
 }
 
 fun isCurProjectRun(appProject: Project): Boolean {
-    var ret = false
-    var projectPath = ""
-    val arg = appProject.gradle.startParameter.taskRequests.getOrNull(0)?.args?.getOrNull(0)
-    if (!arg.isNullOrEmpty()) {
-        var index = arg.indexOf(RocketXPlugin.ASSEMBLE)
-        index = if (index > 0) index - 1 else 0
-        projectPath = arg.substring(0, index)
-    }
-    if (projectPath.isNotEmpty()) {
-        //使用 app 直接 run，currentDir 为项目目录没法使用，只能通过 截取 arg
-        ret = appProject.path.equals(projectPath)
-    }
-    // 使用 assembledebug 命令需要这么区分
-    if (appProject.gradle.startParameter.currentDir.absolutePath.equals(appProject.projectDir.absolutePath)) {
-        ret = true
-    }
-
-
-    return ret
+    return requestedTaskNames(appProject).any { isAssembleTaskForProject(it, appProject) }
 }
 
 
@@ -133,7 +149,6 @@ fun boostGradleOption(appProject: Project) {
     }
 
     appProject.gradle.startParameter.isParallelProjectExecutionEnabled = true
-    appProject.gradle.startParameter.maxWorkerCount += 4
     val android = appProject.extensions.getByType(AppExtension::class.java)
     android.aaptOptions.cruncherEnabled = false
     android.aaptOptions.cruncherProcesses = 0
@@ -141,19 +156,24 @@ fun boostGradleOption(appProject: Project) {
 }
 
 fun speedBuildByOption(appProject: Project, appExtension: AppExtension) {
-    //禁用 arouter transform,不影响 app 运行
+    val configuredTransforms = (
+        appProject.findProperty("rocketx.excludeTransforms")
+            ?: appProject.findProperty("excludeTransForms")
+        )?.toString()
+        ?.split(Regex("\\s+"))
+        ?.filter { it.isNotBlank() }
+        .orEmpty()
+
+    // dev_zy preserves every transform unless the build explicitly opts out.
+    if (configuredTransforms.isEmpty()) return
+
     val transformsFiled = BaseExtension::class.members.firstOrNull { it.name == "_transforms" }
-    var excludeTransForms: List<String>? = null
-    try {
-        excludeTransForms = (appProject.property("excludeTransForms") as? String)?.split(" ")
-    } catch (ignore: Exception) {
-    }
 
     if (transformsFiled != null) {
         transformsFiled.isAccessible = true
         val xValue = transformsFiled.call(appExtension) as? MutableList<Transform>
         xValue?.removeAll {
-            TransformsConstants.TRANSFORM.contains(it.name) || (excludeTransForms?.contains(it.name) ?: false)
+            configuredTransforms.contains(it.name)
         }
 
         if ((xValue?.size ?: 0) > 0) {
@@ -161,12 +181,9 @@ fun speedBuildByOption(appProject: Project, appExtension: AppExtension) {
             xValue?.forEach {
                 println("transform: " + it.name)
             }
-            println("RocketXPlugin : you can disable it to speed up by this way：")
-            println("transFormList = [\"" + xValue!![0].name + "\"]")
+            println("RocketXPlugin : only rocketx.excludeTransforms entries are disabled")
         }
     }
-
-    boostGradleOption(appProject)
 }
 
 /**

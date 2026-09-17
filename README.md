@@ -18,6 +18,34 @@
 
 </div>
 
+## dev_zy 定制分支
+
+`dev_zy` 面向大型、多模块 Android 工程，目标运行环境为 Gradle 6.9.1、
+Android Gradle Plugin 4.1.3 和 Kotlin 1.3.72。该分支在上游 AAR 缓存方案之上增加了以下保护：
+
+* 默认保留所有 Transform；只有显式配置的 Transform 才会被禁用。
+* 使用完整 project path 匹配依赖，支持不同目录下存在同名 module。
+* 变更会沿反向依赖图传播，避免复用依赖了旧 API 或旧资源的 AAR。
+* 缓存产物缺失时自动回退源码编译，构建失败时不更新 module 快照。
+* module 指纹包含相对路径、文件大小和修改时间，并跟踪根构建配置。
+* 支持通过 Gradle property 启用，无需安装 Android Studio 插件。
+* 默认关闭 dex merge 增量复用，先保证多 Transform 工程的正确性。
+
+该分支默认关闭。建议仅在本地 Debug assemble 中显式启用：
+
+```bash
+./gradlew :app:assembleDebug \
+  -Procketx.enabled=true \
+  --no-configuration-cache \
+  --no-configure-on-demand
+```
+
+RocketX 会动态修改项目依赖，因此启用时不兼容 Gradle configuration cache 和
+configuration on demand。检测到这两项开启时，插件会直接失败并输出修复提示。
+
+> 注意：官方 `io.github.trycatchx:rocketx:1.1.1` 不包含 `dev_zy` 的修复。
+> 在发布内部制品前，可将本仓库的 `buildSrc` 作为源码方式接入验证。
+
 ## 编译速度对比
 
 ![2788235-0f027965fefc94f7](https://user-images.githubusercontent.com/6050250/222663410-12d0ffcc-4b80-445f-98d0-472e2b7f05c6.png)
@@ -71,22 +99,24 @@ buildscript {
         openLog = true
         //指定哪些模块不打成 aar ，字符串为 module.path,以下 moduleB 不是一级目录，需要带上父文件夹
         excludeModule = [":moduleA",":module_common:moduleB"]
-        //默认为true，表示走增量编译，由于有过多的 tranform 使用不当情况，可使用 false 使其编译通过（编译速度会变慢）
-        dexMergeIncremental = true 
+        // dev_zy 默认关闭；完成字节码链路验证后可改为 true 以获得更多收益
+        dexMergeIncremental = false
+        // 当前工程已配置这些选项，默认不要由插件修改 worker/kapt 等全局参数
+        tuneGradleOptions = false
     }
    //..
    }
 ```
-* excludeTransForms： 编译阶段可以禁用的 transform ，编译速度更快（可通过build 的 log 搜索关键字 transFormList 查看自己项目引用了哪些 transform，并手动配置在 gradle.properties 文件下）
+* `rocketx.excludeTransforms`：可选，仅禁用显式列出的 transform。`dev_zy` 不再默认禁用任何 transform。
 
 ```
-# 使用空格间隔开
-excludeTransForms = com.alibaba.arouter AAA bbb
+# 使用空格间隔开；不要禁用应用运行所依赖的字节码处理
+rocketx.excludeTransforms = example.transform.Name
 ```
 
 
 ## 问题
-* 对于 gradle.properties 中的配置:如果使用 org.gradle.configureondemand = true ，请删除或者设置为 false，目前在 window 的 as 上会出现问题，已纳入下期需求
+* 启用插件时必须将 `org.gradle.configuration-cache` 和 `org.gradle.configureondemand` 设置为 `false`。
 * 第一次的加速，是最慢的因为需要全量编译后，打出 aar 上传到 LocalMaven
 * 目前如果编译出错，请重新再 run 一次，出现的问题 欢迎提 issue
 

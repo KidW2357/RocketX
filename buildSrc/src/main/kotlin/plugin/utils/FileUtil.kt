@@ -28,7 +28,10 @@ object FileUtil {
                     return name?.endsWith(".aar") ?: false
                 }
             })
-            return if (!files.isNullOrEmpty()) files[0].absolutePath else null
+            return files
+                ?.sortedWith(compareByDescending<File> { it.lastModified() }.thenBy { it.name })
+                ?.firstOrNull()
+                ?.absolutePath
         }
         return null
     }
@@ -41,7 +44,10 @@ object FileUtil {
                     return name?.endsWith(".jar") ?: false
                 }
             })
-            return if (!files.isNullOrEmpty()) files[0].absolutePath else null
+            return files
+                ?.sortedWith(compareByDescending<File> { it.lastModified() }.thenBy { it.name })
+                ?.firstOrNull()
+                ?.absolutePath
         }
         return null
     }
@@ -108,6 +114,5 @@ object FileUtil {
     }
 
 }
-
 
 
