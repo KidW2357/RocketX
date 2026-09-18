@@ -27,6 +27,7 @@ Android Gradle Plugin 4.1.3 和 Kotlin 1.3.72。该分支在上游 AAR 缓存方
 * 使用完整 project path 匹配依赖，支持不同目录下存在同名 module。
 * 变更会沿反向依赖图传播，避免复用依赖了旧 API 或旧资源的 AAR。
 * 缓存产物缺失时自动回退源码编译，构建失败时不更新 module 快照。
+* 仅替换 Android/Java 源码库；通过 `artifacts.add("default", file("vendor.aar"))` 导出二进制包的模块保留原始 project 依赖。
 * module 指纹包含相对路径、文件大小和修改时间，并跟踪根构建配置。
 * 支持通过 Gradle property 启用，无需安装 Android Studio 插件。
 * 默认关闭 dex merge 增量复用，先保证多 Transform 工程的正确性。
@@ -44,7 +45,8 @@ RocketX 会动态修改项目依赖，因此启用时不兼容 Gradle configurat
 configuration on demand。检测到这两项开启时，插件会直接失败并输出修复提示。
 
 > 注意：官方 `io.github.trycatchx:rocketx:1.1.1` 不包含 `dev_zy` 的修复。
-> 在发布内部制品前，可将本仓库的 `buildSrc` 作为源码方式接入验证。
+> 内部制品坐标为 `com.izuiyou.build:rocketx-gradle-plugin:1.0.2-zy`，需要配置内部 Maven 目录。
+> 使用 JDK 11 执行 `./gradlew -p buildSrc publish -PinternalRepoDir=/absolute/path/to/repository` 可重新发布。
 
 ## 编译速度对比
 

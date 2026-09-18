@@ -8,7 +8,6 @@ import org.gradle.api.artifacts.Configuration
 import org.gradle.api.artifacts.ProjectDependency
 import org.gradle.api.internal.artifacts.dependencies.DefaultProjectDependency
 import org.gradle.api.internal.artifacts.dependencies.DefaultSelfResolvingDependency
-import org.gradle.api.internal.artifacts.publish.DefaultPublishArtifact
 import org.gradle.api.internal.file.collections.DefaultConfigurableFileCollection
 import org.gradle.api.internal.file.collections.DefaultConfigurableFileTree
 import plugin.ChildProjectDependencies
@@ -121,19 +120,17 @@ class DependenciesHelper(
      * 解决各个 project 变动之后需要打成 aar 包，算法V1
      */
     fun modifyDependencies(projectWapper: ChildProjectDependencies) {
+        val isAndroidLib = hasAndroidPlugin(projectWapper.project)
+        val isJavaLib = hasJavaPlugin(projectWapper.project)
+        // Only source libraries have RocketX-generated, project-named cache artifacts.
+        // Preserve binary-only projects (artifacts.add("default", file("vendor.aar")))
+        // and their original configuration, artifact names and transitive dependencies.
+        if (!isAndroidLib && !isJavaLib) return
+
         //找到所有的父依赖
         val map = getFirstLevelParentDependencies(projectWapper.project)
-        //找到当前所有通过 artifacts.add("default", file('xxx.aar')) 依赖进来的 aar,并构建local mave
-        val artifactAarList = getAarByArtifacts(projectWapper.project)
         //可能有多个父依赖，所以需要遍历
         map.forEach { parentProject ->
-
-            artifactAarList.forEach {
-                // 根据RocketXBean配置，区分使用本地aar还是maven的依赖方式
-                addAarDependencyToProject(it,
-                    parentProject.key.configurations.maybeCreate("api").name,
-                    parentProject.key)
-            }
 
             //父依赖的 configuration 添加 当前的 project 对应的aar
             parentProject.value.forEach { parentConfig ->
@@ -145,17 +142,13 @@ class DependenciesHelper(
 
                 // 需要根据RocketXBean配置，区分使用本地aar还是maven的依赖方式
                 if (enableLocalMaven) {
-                    val isAndroidLib = hasAndroidPlugin(projectWapper.project)
-                    val isJavaLib = hasJavaPlugin(projectWapper.project)
-                    if (isAndroidLib || isJavaLib) {
-                        addMavenDependencyToProject(projectWapper.project,
-                            parentConfig.name,
-                            parentProject.key,
-                            isAndroidLib)
-                    }
+                    addMavenDependencyToProject(projectWapper.project,
+                        parentConfig.name,
+                        parentProject.key,
+                        isAndroidLib)
                 } else {
-                    //android  module or artifacts module
-                    if (hasAndroidPlugin(projectWapper.project) || artifactAarList.size > 0) {
+                    //android source module
+                    if (isAndroidLib) {
                         addAarDependencyToProject(getFlatAarName(projectWapper.project),
                             parentConfig.name,
                             parentProject.key)
@@ -232,39 +225,6 @@ class DependenciesHelper(
                 "${child.getMavenGroupId()}:${child.getMavenArtifactId()}:1.0@jar")
         }
     }
-
-    private fun getAarByArtifacts(childProject: Project): MutableList<String> {
-        //找到当前所有通过 artifacts.add("default", file('xxx.aar')) 依赖进来的 aar
-        val listArtifact = mutableListOf<DefaultPublishArtifact>()
-        val aarList = mutableListOf<String>()
-        childProject.configurations.maybeCreate("default").artifacts?.forEach {
-            if (it is DefaultPublishArtifact && "aar".equals(it.type)) {
-                listArtifact.add(it)
-            }
-        }
-
-        //拷贝一份到 localMaven
-        listArtifact.forEach {
-            it.file.copyTo(File(FileUtil.getLocalMavenCacheDir(), it.file.name), true)
-            //剔除后缀 （.aar）
-            aarList.add(removeExtension(it.file.name))
-        }
-
-        return aarList
-    }
-
-
-    private fun removeExtension(filename: String): String {
-        val index = filename.lastIndexOf(".")
-        return if (index == -1) {
-            filename
-        } else {
-            filename.substring(0, index)
-        }
-    }
-
-
-
 
     /**
      * 解决各个 project 变动之后需要打成 aar 包,算法 V2
