@@ -5,6 +5,7 @@ import com.android.build.gradle.AppExtension
 import com.android.build.gradle.BaseExtension
 import org.gradle.api.GradleException
 import org.gradle.api.Project
+import org.gradle.api.internal.StartParameterInternal
 import org.gradle.plugins.ide.idea.IdeaPlugin
 import org.gradle.plugins.ide.idea.model.IdeaModule
 import plugin.RocketXPlugin
@@ -53,7 +54,8 @@ fun isEnable(curProject: Project): Boolean {
 
 fun validateBuildEnvironment(appProject: Project) {
     val configurationCacheEnabled =
-        appProject.findProperty("org.gradle.configuration-cache")?.toString()?.toBoolean() == true
+        (appProject.gradle.startParameter as? StartParameterInternal)?.isConfigurationCache
+            ?: (appProject.findProperty("org.gradle.configuration-cache")?.toString()?.toBoolean() == true)
     if (configurationCacheEnabled) {
         throw GradleException(
             "RocketX dev_zy is not compatible with Gradle configuration cache. " +

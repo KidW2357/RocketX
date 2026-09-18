@@ -5,7 +5,7 @@ plugins {
 }
 
 group = 'com.izuiyou.build'
-version = '1.0.0-zy'
+version = '1.0.1-zy'
 
 dependencies {
     implementation gradleApi()
