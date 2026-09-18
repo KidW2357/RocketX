@@ -1,12 +1,11 @@
 plugins {
     id 'org.jetbrains.kotlin.jvm' version "1.3.72"
-    id  'java-gradle-plugin'
+    id 'java-gradle-plugin'
+    id 'maven-publish'
 }
 
-//apply from: "../maven-publish.gradle"
-
-
-
+group = 'com.izuiyou.build'
+version = '1.0.0-zy'
 
 dependencies {
     implementation gradleApi()
@@ -32,6 +31,20 @@ gradlePlugin {
         rocketxPlugin {
             id = 'com.rocketx'
             implementationClass = 'plugin.RocketXPlugin'
+        }
+    }
+}
+
+publishing {
+    publications {
+        pluginMaven(MavenPublication) {
+            artifactId = 'rocketx-gradle-plugin'
+        }
+    }
+    repositories {
+        maven {
+            name = 'internal'
+            url = uri(findProperty('internalRepoDir') ?: "$buildDir/internal-repo")
         }
     }
 }

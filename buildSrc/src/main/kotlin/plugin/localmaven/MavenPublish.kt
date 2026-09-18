@@ -8,6 +8,7 @@ import getMavenGroupId
 import org.gradle.api.Action
 import org.gradle.api.Project
 import org.gradle.api.artifacts.dsl.RepositoryHandler
+import org.gradle.api.artifacts.repositories.MavenArtifactRepository
 import org.gradle.api.internal.artifacts.dsl.LazyPublishArtifact
 import org.gradle.api.plugins.JavaPluginExtension
 import org.gradle.api.publish.PublishingExtension
@@ -61,12 +62,19 @@ fun Project.mavenPublish(mRocketXBean: RocketXBean?) {
     val pomGroupId = this.getMavenGroupId()
     val pomAftId = this.getMavenArtifactId()
     val pomVersion = "1.0"
-    mavenPublish(mRocketXBean, pomGroupId, pomAftId, pomVersion, pomDesc) {
-        it.maven { artifactRepository ->
-            artifactRepository.name = "local"
-            artifactRepository.url = MAVEN_LOCAL
+    mavenPublish(
+        mRocketXBean,
+        pomGroupId,
+        pomAftId,
+        pomVersion,
+        pomDesc,
+        Action<RepositoryHandler> { repositories ->
+            repositories.maven(Action<MavenArtifactRepository> { artifactRepository ->
+                artifactRepository.name = "local"
+                artifactRepository.url = MAVEN_LOCAL
+            })
         }
-    }
+    )
 }
 
 /**

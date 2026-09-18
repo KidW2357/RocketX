@@ -41,7 +41,7 @@ class RocketXBuildListener(
         stringBuilder.append("构建开始时间：" + dateFormat.format(Calendar.getInstance().time) + "\n")
     }
 
-    fun buildStarted(gradle: Gradle) {
+    override fun buildStarted(gradle: Gradle) {
     }
 
 
